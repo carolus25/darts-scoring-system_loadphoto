@@ -1,5 +1,8 @@
-# Last update: Feb. 25, 2026
-# CBGAigop hahaha
+# Recent update (v.1.2): Feb. 25, 2026 | 19:11
+# v1.1: Feb. 25, 2026 | 01:21
+# v1.0: Feb. 22, 2026
+# Code created: Feb. 17, 2025
+#CBGAigop hahaha
 
 # Haven't tried this code yet with an actual dartboard
 # I'll try my best to look one during these days
@@ -42,12 +45,17 @@ class DartScoringSystem:
         self.triple_outer = None
         self.double_inner = None
 
+        # ADDED: Store calibration clicks
+        self.calibration_points = []
+
         # Create resizable window
         cv2.namedWindow("Dart Scoring System", cv2.WINDOW_NORMAL)
         cv2.resizeWindow("Dart Scoring System", 960, 960)
 
         # Mouse click event (used to simulate dart hit on image)
         cv2.setMouseCallback("Dart Scoring System", self.mouse_click)
+
+
 
     # -----------------------------
     # 1️ Detect Dartboard
@@ -79,13 +87,19 @@ class DartScoringSystem:
     # -----------------------------
     # 2️ Compute Ring Boundaries
     # -----------------------------
-    def compute_rings(self):
-        r = self.radius
-        self.inner_bull = int(r * 0.05)
-        self.outer_bull = int(r * 0.1)
-        self.triple_inner = int(r * 0.55)
-        self.triple_outer = int(r * 0.6)
-        self.double_inner = int(r * 0.9)
+    # NOTE: Now replaced by multi-point calibration instead of fixed percentages
+    def compute_rings_from_calibration(self):
+        cx, cy = self.center
+
+        def dist(px, py):
+            return int(math.sqrt((px - cx) ** 2 + (py - cy) ** 2))
+
+        self.inner_bull   = dist(*self.calibration_points[1])
+        self.outer_bull   = dist(*self.calibration_points[2])
+        self.triple_inner = dist(*self.calibration_points[3])
+        self.triple_outer = dist(*self.calibration_points[4])
+        self.double_inner = dist(*self.calibration_points[5])
+        self.radius       = dist(*self.calibration_points[6])
 
     # -----------------------------
     # 3️ Draw Board Overlay
@@ -139,13 +153,21 @@ class DartScoringSystem:
         angle = math.degrees(math.atan2(-dy, dx))
 
         # Shift so 0° aligns with 20 (top)
-        angle = (angle + 90) % 360
+        angle = (angle + 90 + 9) % 360   # +9° fixes sector center alignment
+        # Applied 18:31 | 02-25-2026
 
         sector = int(angle // 18)
 
+        #dart_order = [
+            #20,1,18,4,13,6,10,15,2,17,
+            #3,19,7,16,8,11,14,9,12,5
+        #]
+
+        # Adjusted the position of the sectors //hardcoded fixed
+        # Applied 19:09 | 02-25-2026
         dart_order = [
-            20,1,18,4,13,6,10,15,2,17,
-            3,19,7,16,8,11,14,9,12,5
+            3,17,2,15,10,6,13,4,18,1,
+            20,5,12,9,14,11,8,16,7,19
         ]
 
         base_score = dart_order[sector]
@@ -159,21 +181,31 @@ class DartScoringSystem:
 
         if event == cv2.EVENT_LBUTTONDOWN:
 
-            # First click = center
-            if not self.calibrated and self.center is None:
-                self.center = (x, y)
-                print("Center set")
+            # Multi-step calibration:
+            # Click order:
+            # 1 Center
+            # 2 Inner bull
+            # 3 Outer bull
+            # 4 Triple inner
+            # 5 Triple outer
+            # 6 Double inner
+            # 7 Outer edge
 
-            # Second click = outer edge
-            elif not self.calibrated and self.center is not None:
-                cx, cy = self.center
-                self.radius = int(math.sqrt((x - cx)**2 + (y - cy)**2))
-                self.compute_rings()
-                self.calibrated = True
-                print("Calibration Complete")
+            if not self.calibrated:
+
+                self.calibration_points.append((x, y))
+
+                if len(self.calibration_points) == 1:
+                    self.center = (x, y)
+                    print("Center set")
+
+                elif len(self.calibration_points) == 7:
+                    self.compute_rings_from_calibration()
+                    self.calibrated = True
+                    print("Calibration Complete")
 
             # After calibrated = score clicks
-            elif self.calibrated:
+            else:
                 score = self.compute_score(x, y)
                 print("Score:", score)
 
@@ -193,10 +225,10 @@ class DartScoringSystem:
 
             if not self.calibrated:
                 cv2.putText(display,
-                            "Click CENTER then OUTER EDGE to calibrate",
-                            (40, 50),
+                            "Click: CENTER → inner bull → outer bull → triple inner → triple outer → double inner → outer edge",
+                            (20, 50),
                             cv2.FONT_HERSHEY_SIMPLEX,
-                            0.8, (0, 255, 0), 2)
+                            0.6, (0, 255, 0), 2)
             else:
                 self.draw_board_overlay(display)
 
